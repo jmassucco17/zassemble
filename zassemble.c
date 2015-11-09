@@ -107,7 +107,8 @@ typedef enum ERROR_
     INV_OUTPUT,
     INV_OPCODE,
     INV_LABEL,
-    PARSE_ERR
+    PARSE_ERR,
+    PC_ERR
 } ERROR;
 
 //-----------------------------------------------------------------------------
@@ -312,6 +313,8 @@ int handleErrors(void)
                 fprintf(stderr, "The instruction contains invalid syntax: \n%s", current_error->full_line);
                 fprintf(stderr, "\n\n");
                 break;
+            case PC_ERR:
+                fprintf(stderr, ": Too many instructions. You may only have up to 256 instructions in your program.");
         }
         
         //Advance one error
@@ -1160,6 +1163,11 @@ int main (int argc, char *argv[])
         // Advance to next node in LL
         current = current->next;
         current_line++;
+        
+        if (current_line == 257)
+        {
+            addError(PC_ERR);
+        }
     }
 
     //Print newline to terminate output file
