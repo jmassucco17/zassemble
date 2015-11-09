@@ -1,0 +1,411 @@
+Single-Cycle CPU Assembly Overview
+
+Table of Contents
+
+I.  Instruction Set
+     i.   Physical Instructions
+     ii.  Pseudoinstructions
+II.  Implementation Overview
+     i.   Preprocessor
+          a. Label Collection
+          b. Instruction Datatype
+          c. Pseudoinstruction Expansion
+          d. Instruction Type Determination
+     ii.  Assembler
+          a. Binary File Population
+     iii. Future Work
+          a. Platform Independence Concerns
+          b. Comments
+III. Usage
+     i.   Using ZAssemble
+     ii.  Compiling ZAssemble
+IV.  Program Examples
+     i.   Simple Example
+     ii.  Pseudoinstruction Example
+     iii. Multiplier
+
+========================================
+=       I. Instruction Set             =
+========================================
+
+    The instruction set for the student-created single-cycle
+CPU is a subset of the MIPS instruction set.  It is comprised
+of physical instructions and pseudoinstructions.  Since the
+student CPU is simple, only 11 physical instructions have
+been implemented.  To complement this limited instruction
+set, 9 pseudoinstructions have been added.
+
+-
+
+i. Physical Instructions
+//TODO:
+//Update this list to match completely the instruction_set.pdf
+
+	//Update format for lw and sw according to Leeser’s instructions
+    lw
+    Type: I-type
+    Opcode: 0x0
+    Syntax: lw $rt, IMM($rs)
+    Description:
+	Loads the word stored in memory at address
+	$rs + IMM into register $rt.    
+
+    sw
+    Type: I-type
+    Opcode: 0x1
+    Syntax: sw $rt, IMM($rs)
+    Description:
+	Stores the word stored in $rt into memory
+	at address $rs + IMM.
+
+    add
+    Type: R-type
+    Opcode: 0x2
+    Syntax: add $rd, $rs, $rt
+    Description:
+        Adds $rs and $rt and puts the result into
+        $rd. Assumes inputs are signed.
+
+    addi
+    Type: I-type
+    Opcode: 0x3
+    Syntax: addi $rt, $rs, IMM
+    Description:
+        Adds $rs and IMM and puts the result into 
+        $rt. Assumes inputs are signed.
+
+    inv
+    Type: R-type
+    Opcode: 0x4
+    Syntax: inv $rd, $rt
+    Description:
+        Bitwise inverts $rt ($rs unused) and puts the
+        result into $rt.
+
+    and
+    Type: R-type
+    Opcode: 0x5
+    Syntax: and $rd, $rs, $rt
+    Description:
+        Performs a bitwise AND on $rs and $rt and puts
+        the result into $rd.
+
+    andi
+    Type: I-type
+    Opcode: 0x6
+    Syntax: andi $rt, $rs, IMM
+    Description:
+        Performs a bitwise AND on $rs and IMM and puts
+        the result into $rt.
+
+    or
+    Type: R-type
+    Opcode: 0x7
+    Syntax: or $rd, $rs, $rt
+    Description:
+        Ors $rs and $rt and puts the result into
+        $rd.
+        
+    ori
+    Type: I-type
+    Opcode: 0x8
+    Syntax: ori $rt, $rs, IMM
+    Description:
+        Ors $rs and IMM and puts the result into
+        $rt.
+    
+    sra
+    Type: I-type
+    Opcode: 0x9
+    Syntax: sra $rd, $rs, SHAMT
+    Description:
+        Shifts $rs SHAMT bits to the right, extending
+        the sign, and stores the result in $rd.
+        
+    sll
+    Type: I-type
+    Opcode: 0xA
+    Syntax: sll $rd, $rs, SHAMT
+    Description:
+        Shifts $rs SHAMT bits to the left and stores
+        the result in $rd.
+        
+    beq
+    Type: J-type
+    Opcode: 0xB
+    Syntax: beq $rs, $rt, LABEL
+    Description:
+        Compares  $rs and $rt. If they are equal, change
+        the instruction address to LABEL.
+
+    bne
+    Type: J-type
+    Opcode: 0xC
+    Syntax: bne $rs, $rt, LABEL
+    Description:
+        Compares $rs and $rt. If they are unequal, change
+        the instruction address to POSITION.
+
+    clr
+    Type: R-type
+    Opcode: 0xD
+    Syntax: clr $rt
+    Description:
+        Sets value of $rt to 0 and stores the result in
+        $rt.
+
+-
+
+ii. Pseudoinstructions
+
+    Pseudoinstructions are currently not implemented in the 
+    assembler.
+    
+    Example:
+
+    neg
+    Type: R-type
+    Syntax: neg $rd, $rt
+    Description:
+        Performs a two's-complement conversion on
+        $rt and stores the result in $rd.
+    Expansion:
+        inv $rd, $rt
+        addi $rd, $rd, 0x01
+    
+
+========================================
+=     II. Implementation Overview      =
+========================================
+
+    The assembler consists of two main steps, the first
+of which is much more significant than the second.
+    In the first step, the assembler proceeds line-by-line
+through the input file and parses for labels and
+instructions. Labels and instructions are organized
+in linked list with relevant data.
+    In the second step, the assembler begins writing 
+instructions to the output file and, if it finds an 
+branch/jump instructions, attempts to link them to
+the labels they reference. At the end of this step,
+the assembler handles all errors. If there were any 
+errors, the output file is deleted, just as it would
+be in compilers like GCC.
+
+-
+
+i. Preprocessor
+
+    On the first pass of the user file, lines are
+extracted from the file and strtok (from string.h) is
+used to separate it into its tokens.  Decision making
+is performed based on whether or not a label exists,
+and on the opcode.
+
+a. Label Collection
+
+    The label is identified by splitting on the ':'
+character.  If no : character exists in the line, this
+step is skipped; the token pointer points to the opcode.
+
+    Labels are stored in a linked list so that memory
+management is not a concern.  When a label is encountered,
+the label identifier is prepended to the linked list along
+with the current line number.
+
+    If a label was found, strtok is reset so that the 
+token points to the opcode. The label is also stripped from the line in memory.
+
+b. Instruction Datatype
+
+    There are three types of physical instructions - I-, J- and
+R-type instructions.  I-type instructions accept an constant
+value (or immediate value), declared at assemble time.  J-type
+instructions take an address in the immediate space and may
+change the program counter to this address's value.  Finally,
+R-type instructions are performed entirely within the register
+space and take two input registers and a destination register.
+
+    The base opcode is stored in a struct called
+INSTR, which allows a polymorphic approach to
+populating the fixed-width instruction with different
+arguments.
+
+   typedef struct INSTR_
+    {
+        unsigned short          : 12;
+        unsigned short opcode   :  4;
+    } INSTR;
+
+    If the opcode is associated with an R-type
+instruction, the struct is cast to an R_INSTR type.  This
+type has fields for an opcode, three registers and pads to account for
+the extra 4 bits at the end of the instruction.
+
+    typedef struct R_INSTR_
+    {
+        unsigned short          : 6;
+        unsigned short rd       : 2;
+        unsigned short rt       : 2;
+        unsigned short rs       : 2;
+        unsigned short opcode   : 4;
+    } R_INSTR;
+
+    If the opcode is instead associated with an I- or
+J-type instruction, the struct is cast to the IJ_INSTR type.
+This type has fields for an opcode, two registers, and 16 bits
+of instruction data.
+
+    typedef struct IJ_INSTR_
+    {
+        unsigned short immed    : 8;
+        unsigned short rd       : 2;
+        unsigned short rs       : 2;
+        unsigned short opcode   : 4;
+    } IJ_INSTR;
+
+    The appropriate struct is populated using strtok and
+scanf to extract each token, then the correct register number
+from the token, where appropriate.
+
+c. Pseudoinstruction Expansion
+
+    The token is known at this stage to point to the opcode.
+The opcode is checked against all the implemented
+pseudoinstructions.  If a pseudoinstruction's opcode is
+encountered, the arguments are parsed out using strtok and
+the expanded instructions are added to a linked list containing
+the INSTR structs. The line number counter is incremented by 
+the number of lines in the expanded instruction.
+
+    If the opcode is not that of a pseudoinstruction, the
+line is converted to an INSTR struct and added to the linked
+list containing the converted program. If the instruction is a
+beq to a label, the label is added to the linked list node and
+the INSTR.immed field is populated with a placeholder value of -1.
+
+d. Type Determination and Serialization
+
+    In order to make the second pass over the instructions as
+simple as possible, a linked list is formed with the INSTR_LIST
+struct as the node object.  This struct holds an INSTR pointer
+and a char* to hold labels that have not been translated yet
+in addition to the next pointer.
+
+    The opcode is extracted first.  It is compared to each
+known physical instruction  in order to assign the actual
+opcode into the instruction data type.  At this stage, if
+the first token in the line is not an instruction, an error
+will be returned.
+
+    Now that the integer opcode is known, the code can
+quickly determine whether the instruction is R- or I/J-type.
+The appropriate instruction datatype is created and the rest
+of the instruction is tokenized and parsed in order to populate
+accordingly.  In the event of a BEQ instruction pointing to a
+label, the INSTR_LIST.label field is filled with the label and
+the IJ_INSTR.immed value is set to -1.
+
+-
+
+ii. Assembler
+
+    The assembler step is a simple pass over the linked list of
+mostly-populated instructions, writing them to the output binary
+and populating labels where necessary from the label linked list.
+If the operation is a BEQ or BNE, then the label in the node is
+used to look up the correct immediate value.
+
+a. Binary File Population
+
+    The line's machine code translation is now present in
+the INSTR struct, having been populated based on its type.
+It can now be written to the output file, which has been
+opened in write mode.  This file can now be loaded
+into the student CPU's instruction memory for execution.
+
+-
+
+iii. Future Work
+
+a. Platform Independence Concerns
+
+    The implementation as it stands is platform-dependent. The
+use of bitfielded structs is frowned upon for platform-independent
+low-level code, since it is largely compiler-dictated and the
+endianness and instruction order is not part of the C standard.  
+Additionally, the endianness of the raw struct data may need to be
+swapped depending on the byte endianness of the target processor.
+These changes should be straightforward and should be made using
+preprocessor defines to the C compiler so that the correct
+endianness can be chosen at compile time.
+
+
+========================================
+=            III. Usage                =
+========================================
+
+-
+
+i. Using ZAssemble
+
+The assembler is called ZAssemble and can be used as follows:
+
+zassemble INPUT_FILE [OUTPUT_FILE]
+
+The INPUT_FILE must be a text file written in assembly
+and with labels on the same line as the addressed instruction.
+Blank lines are allowed.  The output file is a binary
+which should be loaded into the student CPU's instruction memory.
+
+-
+
+ii. Compiling ZAssemble
+
+This assembler was compiled with GCC 4.8.1 using the following flags:
+
+gcc [-g] -o zassemble zassemble.c
+
+========================================
+=       IV. Program Examples           =
+========================================
+
+-
+
+i. Simple Example
+
+    This example contains a number of physical instructions of R-, I-,
+and J-type.
+
+main: addi $1, $2, 3
+      and  $1, $2, $1
+      beq  $1, $2, main
+
+-
+
+ii. Pseudoinstruction Example
+
+    This example contains pseudoinstructions.
+    
+    li $1, 0x4
+    subi $1, $2, 0x1
+    not $2, $2
+
+-
+
+iii. Multiplier
+
+    This example is a fully-formed program that executes shift-and-add
+multiplication.  It uses multiple labels and data memory.
+
+           sw $0, $0, 0x10
+mult_loop: andi $3, $1, 1
+           beq $1, $0, bit_clear
+           lw $0, $1, 0x10
+           add $1, $2, $1
+           sw $0, $1, 0x10
+bit_clear: sll $2, $2, 1
+           slr $3, $3, 1
+           beq $3, $0, done
+           j mult_loop
+done:      lw $0, $1, 0x10
