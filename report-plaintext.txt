@@ -13,9 +13,9 @@ II.  Implementation Overview
           d. Instruction Type Determination
      ii.  Assembler
           a. Binary File Population
-     iii. Future Work
+     iii. Error Handler
+     iv.  Future Work
           a. Platform Independence Concerns
-          b. Comments
 III. Usage
      i.   Using ZAssemble
      ii.  Compiling ZAssemble
@@ -31,17 +31,14 @@ IV.  Program Examples
     The instruction set for the student-created single-cycle
 CPU is a subset of the MIPS instruction set.  It is comprised
 of physical instructions and pseudoinstructions.  Since the
-student CPU is simple, only 11 physical instructions have
+student CPU is simple, only 14 physical instructions have
 been implemented.  To complement this limited instruction
-set, 9 pseudoinstructions have been added.
+set, pseudoinstructions may be added.
 
 -
 
 i. Physical Instructions
-//TODO:
-//Update this list to match completely the instruction_set.pdf
 
-	//Update format for lw and sw according to Leeser’s instructions
     lw
     Type: I-type
     Opcode: 0x0
@@ -158,7 +155,7 @@ i. Physical Instructions
 
 ii. Pseudoinstructions
 
-    Pseudoinstructions are currently not implemented in the 
+    **Pseudoinstructions are currently not implemented in the 
     assembler.
     
     Example:
@@ -178,19 +175,18 @@ ii. Pseudoinstructions
 =     II. Implementation Overview      =
 ========================================
 
-    The assembler consists of two main steps, the first
-of which is much more significant than the second.
+    The assembler consists of two main steps.
     In the first step, the assembler proceeds line-by-line
 through the input file and parses for labels and
 instructions. Labels and instructions are organized
 in linked list with relevant data.
     In the second step, the assembler begins writing 
-instructions to the output file and, if it finds an 
+instructions to the output file and, if it finds any 
 branch/jump instructions, attempts to link them to
 the labels they reference. At the end of this step,
 the assembler handles all errors. If there were any 
-errors, the output file is deleted, just as it would
-be in compilers like GCC.
+errors, the output file is deleted, to ensure incorrect
+output is not given to users.
 
 -
 
@@ -198,9 +194,10 @@ i. Preprocessor
 
     On the first pass of the user file, lines are
 extracted from the file and strtok (from string.h) is
-used to separate it into its tokens.  Decision making
-is performed based on whether or not a label exists,
-and on the opcode.
+used to separate it into its tokens.  First, tabs
+are replaced with spaces and all comments removed.
+Then, decision making is performed based on whether
+or not a label exists, and on the opcode.
 
 a. Label Collection
 
@@ -219,10 +216,10 @@ token points to the opcode. The label is also stripped from the line in memory.
 b. Instruction Datatype
 
     There are three types of physical instructions - I-, J- and
-R-type instructions.  I-type instructions accept an constant
+R-type instructions.  I-type instructions accept a constant
 value (or immediate value), declared at assemble time.  J-type
-instructions take an address in the immediate space and may
-change the program counter to this address's value.  Finally,
+instructions take a PC offset in the immediate space and may
+change the program counter by this amount.  Finally,
 R-type instructions are performed entirely within the register
 space and take two input registers and a destination register.
 
@@ -244,7 +241,7 @@ the extra 4 bits at the end of the instruction.
 
     typedef struct R_INSTR_
     {
-        unsigned short          : 6;
+        unsigned short pad      : 6;
         unsigned short rd       : 2;
         unsigned short rt       : 2;
         unsigned short rs       : 2;
@@ -265,11 +262,13 @@ of instruction data.
     } IJ_INSTR;
 
     The appropriate struct is populated using strtok and
-scanf to extract each token, then the correct register number
+sscanf to extract each token, then the correct register number
 from the token, where appropriate.
 
 c. Pseudoinstruction Expansion
 
+    **Pseudoinstructions are not implemented, and this process
+may change when it is actually implemented.
     The token is known at this stage to point to the opcode.
 The opcode is checked against all the implemented
 pseudoinstructions.  If a pseudoinstruction's opcode is
@@ -287,7 +286,7 @@ the INSTR.immed field is populated with a placeholder value of -1.
 d. Type Determination and Serialization
 
     In order to make the second pass over the instructions as
-simple as possible, a linked list is formed with the INSTR_LIST
+simple as possible, a linked list is formed with the INSTR_NODE
 struct as the node object.  This struct holds an INSTR pointer
 and a char* to hold labels that have not been translated yet
 in addition to the next pointer.
@@ -296,13 +295,13 @@ in addition to the next pointer.
 known physical instruction  in order to assign the actual
 opcode into the instruction data type.  At this stage, if
 the first token in the line is not an instruction, an error
-will be returned.
+will be added.
 
     Now that the integer opcode is known, the code can
 quickly determine whether the instruction is R- or I/J-type.
 The appropriate instruction datatype is created and the rest
 of the instruction is tokenized and parsed in order to populate
-accordingly.  In the event of a BEQ instruction pointing to a
+accordingly.  In the event of a BEQ/BNE instruction pointing to a
 label, the INSTR_LIST.label field is filled with the label and
 the IJ_INSTR.immed value is set to -1.
 
@@ -316,17 +315,31 @@ and populating labels where necessary from the label linked list.
 If the operation is a BEQ or BNE, then the label in the node is
 used to look up the correct immediate value.
 
-a. Binary File Population
+a. File Population
 
     The line's machine code translation is now present in
 the INSTR struct, having been populated based on its type.
-It can now be written to the output file, which has been
-opened in write mode.  This file can now be loaded
-into the student CPU's instruction memory for execution.
+The instruction is written as a 4-character hex number,
+along with appropriate file headers, and can be added
+directly as a memory initialization file in Vivado.
 
 -
 
-iii. Future Work
+iii. Error Handler
+
+    Errors are organized using a linked list structure.
+Whenever an error is encountered, it is loaded into the 
+linked list using an enum of error types, and any relevant
+global context information is also added (e.g. full_line
+string if it is a PARSE_ERR). When the assembler finishes
+writing to file, we handle all errors by traversing the 
+linked list and outputting appropriate errors. If no
+errors occur, the output file remains; otherwise, the file
+is “unlinked”, i.e. deleted, since it contains potentially
+bad information.
+
+
+iv. Future Work
 
 a. Platform Independence Concerns
 
