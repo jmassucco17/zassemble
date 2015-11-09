@@ -27,6 +27,8 @@
 /*------------------------------------------------------------------------------
  *   #$-Defines-$#
  *-----------------------------------------------------------------------------*/
+
+//Opcode defines
 #define LW      0x0 //I
 #define SW      0x1 //I
 #define ADD     0x2 //R
@@ -42,14 +44,11 @@
 #define BNE     0xC //J
 #define CLR     0xD //R
 
-#define     NO_ASSEMBLY_FILE        -1;
-#define     INVALID_INPUT_FILE      -2;
-#define     INVALID_OUTPUT_FILE     -3;
-
+//ANSI color defines
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
-//Globally variables for error handling
+//Global variables for error handling
 static char* fullLine;
 static int lineNumber = 1;
 static int instructionNumber = 1;
@@ -495,8 +494,10 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
             return -1;
         }
         
+        immedNum = getImmed(token);
+        
         //Parse immediate
-        sscanf(token, "%x", &immedNum);
+        //sscanf(token, "%x", &immedNum);
 
         //Grab second register
         token = strtok(NULL, ")");
@@ -607,8 +608,10 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
             return -1;
         }
         
+        immedNum = getImmed(token);
+        
         //Parse immediate
-        sscanf(token, "%x", &immedNum);
+        //sscanf(token, "%x", &immedNum);
 
         // Populate instructions according to format
         // opcode $rd, $rs, IMM
@@ -628,6 +631,48 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
     }
 
     return 0;
+}
+
+//-----------------------------------------------------------------------------
+/*!     \brief      Parses string, returns immediate value
+ *      \details    Takes a string assumed to contain an immediate value;
+ *                  if the string contains "0x", the value is interpretted as
+ *                  hex, otherwise, it is interpretted as decimal.
+ */
+int getImmed(char* immediate_string)
+{
+    char* zero_indicator;
+    char* x_indicator;
+    char* token;
+    int immedNum;
+    
+    //Look for zero in token
+    zero_indicator = strchr(immediate_string, '0');
+    
+    //Look for x in token
+    x_indicator = strchr(immediate_string, 'x');
+    
+    //Case where "0x" is present
+    if (x_indicator == (zero_indicator + 1))
+    {
+        token = strtok(immediate_string, "0x");
+        sscanf(token, "%x", &immedNum);
+    }
+    
+    //Case where "0x" is not present
+    else if (x_indicator == NULL)
+    {
+        sscanf(immediate_string, "%d", &immedNum);
+    }
+    
+    //Case indicates error
+    else
+    {
+        //Need some kind of error handle here
+        return 0;
+    }
+    
+    return immedNum;
 }
 
 //-----------------------------------------------------------------------------
