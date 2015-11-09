@@ -1,0 +1,3 @@
+# This file will test the interpretation of immediates
+addi	$1, $2, 0x11	#Should translate to 0x3911
+addi	$1, $2, 11	#Should translate to 0x390B

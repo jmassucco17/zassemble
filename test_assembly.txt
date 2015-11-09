@@ -1,0 +1,8 @@
+	#only a comment here
+	# another one right here
+      addi	$1, $2, 0x03
+main: and  $1, $2, $1
+      beq	$1, $2, main
+foo:  add  $1, $2, $3
+      bne  $1, $3, main #this is a comment
+#comments 4 days
