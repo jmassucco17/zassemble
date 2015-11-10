@@ -963,8 +963,6 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
 }
 
 //-----------------------------------------------------------------------------
-<<<<<<< HEAD
-=======
 /*!     \brief      Parses string, returns immediate value
  *      \details    Takes a string assumed to contain an immediate value;
  *                  if the string contains "0x", the value is interpretted as
