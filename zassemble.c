@@ -182,10 +182,10 @@ static bool firstInstruction = true;
 void writeInstr(INSTR instr, FILE* fd)
 {
     if (firstInstruction) {
-        fprintf(fd, "memory_initialization_radix=16;\nmemory_initialization_vector=%04x", instr);
+        fprintf(fd, "memory_initialization_radix=16;\nmemory_initialization_vector=%04hx", instr);
         firstInstruction = false;
     } else {
-        fprintf(fd, ",%04x", instr);
+        fprintf(fd, ",%04hx", instr);
     }
 }
 
