@@ -658,7 +658,6 @@ int getImmed(char* immediate_string)
     //Case where "0x" is present
     if (x_indicator == (zero_indicator + 1))
     {
-        //token = strtok(immediate_string, "0x");
         immediate_string = x_indicator + 1;
         sscanf(immediate_string, "%x", &immedNum);
     }
