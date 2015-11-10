@@ -166,59 +166,125 @@ typedef struct ERROR_NODE_
 
 static ERROR_NODE* error_LL_head = NULL;
 
+
 /*------------------------------------------------------------------------------
- *   #$-Label Functions-$#
+ *   #$-Instruction Functions-$#
  *-----------------------------------------------------------------------------*/
 //-----------------------------------------------------------------------------
-/*!     \brief      Function to add a node to a label linked list
- *      \details    Prepends a new node storing a label string and a line number
- *                  to the linked list pointed to by head
- *      \param      label_LL_head    Pointer to the head of (file global) label LL.
+/*!     \brief      Function to write an instruction to a file in hex format
+ *      \details    Takes an instruction and writes it to file fd in hex. Also
+ *                  Adds a necessary initialization string before the first
+ *                  instruction is written.
+ *      \param      firstInstruction    Tracker needed to prepend instruction
+ *                                      list with necessary initialization string
  */
-void addLabel(char* label, int line)
+static bool firstInstruction = true;
+void writeInstr(INSTR instr, FILE* fd)
 {
-    //Create new node
-    LABEL_NODE *newNode;
-    newNode = (LABEL_NODE*) malloc(sizeof(LABEL_NODE));
+    if (firstInstruction) {
+        fprintf(fd, "memory_initialization_radix=16;\nmemory_initialization_vector=%04x", instr);
+        firstInstruction = false;
+    } else {
+        fprintf(fd, ",%04x", instr);
+    }
+}
+
+
+//-----------------------------------------------------------------------------
+/*!     \brief      Function to add a machine code instruction to LL
+ *      \details    Takes a generic type machine code instruction and appends
+ *                  it to a linked list of instructions
+ */
+INSTR_NODE* addInstruction(INSTR *new, INSTR_NODE **current)
+{
+    //Create new instruction node
+    INSTR_NODE *newItem = (INSTR_NODE*)malloc(sizeof(INSTR_NODE));
+    newItem->next = NULL;
     
-    //Save label and line number in new node
-    newNode->label = (char*) malloc(strlen(label)*sizeof(char));
-    strcpy(newNode->label, label);
-    newNode->line = line;
+    //Populate with instruction
+    newItem->instr = *new;
     
-    //Prepend new node onto existing linked list
-    newNode->next = label_LL_head;
-    label_LL_head = newNode;
+    //If this is the first instruction
+    if (instr_LL_head == NULL)
+    {
+        instr_LL_head = newItem;
+        *current = instr_LL_head;
+    }
+    //If this is not the first instruction
+    else if (*current != NULL)
+    {
+        (*current)->next = newItem;
+        *current = newItem;
+    }
+    
+    return *current;
 }
 
 //-----------------------------------------------------------------------------
-/*!     \brief      Function to get relative position to a label
- *      \details    Takes in a label referenced in a branch or jump instruction
- *                  and the line of that instruction and returns the relative
- *                  number of line numbers away the specified label is.
- *      \note       A negative return value indicates jump up
+/*!     \brief      Wrapper for adding R-type instruction to LL
+ *      \details    Takes an instruction in terms of R-type specific parameters,
+ *                  populates them into an R-type machine code instruction bitfield,
+ *                  then casts as a generic machine code instruction and calls
+ *                  addInstruction()
  */
-uchar getLabelJump(char* label, int current_line)
+INSTR_NODE* addRInstr(ushort opcode, ushort rs, ushort rt, ushort rd, INSTR_NODE **current)
 {
-    //Traverse label LL
-    LABEL_NODE *current = label_LL_head;
-    while (current != NULL)
-    {
-        //If label is found, return relative jump
-        if (strcmp(label, current->label) == 0)
-        {
-            return (uchar)((current->line) - (current_line));
-        }
-        current = current->next;
-    }
-    //If label is not found, generate an error
-    addError(INV_LABEL);
-
-    return -1;
+    R_INSTR *instr = (R_INSTR*)malloc(sizeof(R_INSTR));
+    instr->opcode = opcode;
+    instr->rs = rs;
+    instr->rt = rt;
+    instr->rd = rd;
+    instr->pad = 0;
+    
+    return addInstruction((INSTR*)instr, current);
 }
+
+//-----------------------------------------------------------------------------
+/*!     \brief      Wrapper for adding IJ-type instruction to LL
+ *      \details    Takes an instruction in terms of IJ-type specific parameters,
+ *                  populates them into an IJ-type machine code instruction bitfield,
+ *                  and casts as a generic machine code instruction and calls
+ *                  addInstruction(). Also adds a label_reference to the created
+ *                  list item (for branch/jump commands)
+ */
+INSTR_NODE* addIJInstr(ushort opcode, ushort rs, ushort rd, ushort immed, char* label_reference, INSTR_NODE **current)
+{
+    IJ_INSTR *instr = (IJ_INSTR*)malloc(sizeof(IJ_INSTR));
+    instr->opcode = opcode;
+    instr->rs = rs;
+    instr->rd = rd;
+    instr->immed = immed;
+    
+    if ( (*current = addInstruction((INSTR*)instr, current)) )
+    {
+        (*current)->label_reference = (char*)malloc(255);
+        strcpy((*current)->label_reference, label_reference);
+    }
+    
+    return *current;
+}
+
+
 /*------------------------------------------------------------------------------
  *   #$-Error Functions-$#
  *-----------------------------------------------------------------------------*/
+
+//-----------------------------------------------------------------------------
+/*!     \brief      Return -1 for empty/NULL string
+ */
+int lineIsEmpty(char* parse_buf)
+{
+    if ( parse_buf == NULL              ||
+        (strcmp(parse_buf, "\n") == 0) ||
+        (strcmp(parse_buf, "\r") == 0) ||
+        (strcmp(parse_buf, "")   == 0)   )
+    {
+        return -1;
+    }
+    
+    return 0;
+}
+
 
 //-----------------------------------------------------------------------------
 /*!     \brief      Function to add an error to a LL
@@ -239,7 +305,7 @@ int addError(ERROR error)
     {
         //Allocate memory for line
         newItem->full_line = (char*) malloc(strlen(fullLine)*sizeof(char));
-
+        
         //Populate with full line
         strcpy( (newItem->full_line), fullLine);
     }
@@ -324,32 +390,293 @@ int handleErrors(void)
     //A zero return indicates there were errors and they were handled
     return 0;
 }
+
 /*------------------------------------------------------------------------------
- *   #$-Instruction Functions-$#
+ *   #$-Label Functions-$#
  *-----------------------------------------------------------------------------*/
 //-----------------------------------------------------------------------------
-/*!     \brief      Function to write an instruction to a file in hex format
- *      \details    Takes an instruction and writes it to file fd in hex. Also
- *                  Adds a necessary initialization string before the first 
- *                  instruction is written.
- *      \param      firstInstruction    Tracker needed to prepend instruction
- *                                      list with necessary initialization string
+/*!     \brief      Function to add a node to a label linked list
+ *      \details    Prepends a new node storing a label string and a line number
+ *                  to the linked list pointed to by head
+ *      \param      label_LL_head    Pointer to the head of (file global) label LL.
  */
-static bool firstInstruction = true;
-void writeInstr(INSTR instr, FILE* fd)
+void addLabel(char* label, int line)
 {
-  if (firstInstruction) {
-    fprintf(fd, "memory_initialization_radix=16;\nmemory_initialization_vector=%04x", instr);
-    firstInstruction = false;
-  } else {
-    fprintf(fd, ",%04x", instr);
-  }
+    //Create new node
+    LABEL_NODE *newNode;
+    newNode = (LABEL_NODE*) malloc(sizeof(LABEL_NODE));
+    
+    //Save label and line number in new node
+    newNode->label = (char*) malloc(strlen(label)*sizeof(char));
+    strcpy(newNode->label, label);
+    newNode->line = line;
+    
+    //Prepend new node onto existing linked list
+    newNode->next = label_LL_head;
+    label_LL_head = newNode;
 }
 
 //-----------------------------------------------------------------------------
+/*!     \brief      Function to get relative position to a label
+ *      \details    Takes in a label referenced in a branch or jump instruction
+ *                  and the line of that instruction and returns the relative
+ *                  number of line numbers away the specified label is.
+ *      \note       A negative return value indicates jump up
+ */
+uchar getLabelJump(char* label, int current_line)
+{
+    //Traverse label LL
+    LABEL_NODE *current = label_LL_head;
+    while (current != NULL)
+    {
+        //If label is found, return relative jump
+        if (strcmp(label, current->label) == 0)
+        {
+            return (uchar)((current->line) - (current_line));
+        }
+        current = current->next;
+    }
+    //If label is not found, generate an error
+    addError(INV_LABEL);
+    
+    return -1;
+}
+
+/*------------------------------------------------------------------------------
+ *   #$-Parsing Functions-$#
+ *-----------------------------------------------------------------------------*/
+
+//-----------------------------------------------------------------------------
+/*!     \brief      Replaces any tabs in parse_buf with spaces
+ *      \details    Takes in parse_buf, searches for tab characters, and
+ *                  replaces those found with spaces.
+ */
+int replaceTabsWithSpaces(char* parse_buf)
+{
+    char* tab_location;
+    
+    //Get pointer to first occurence of '\t' in parse_buf
+    tab_location = strchr(parse_buf, '\t');
+    
+    //If pointer isn't NULL, we found one
+    while (tab_location != NULL)
+    {
+        //Edit parse_buf to replace tab with space
+        parse_buf[tab_location-parse_buf] = ' ';
+        
+        //This syntax advnaces strchr() to find next tab
+        tab_location = strchr(tab_location + 1, '\t');
+    }
+    
+    return lineIsEmpty(parse_buf);
+}
+
+//-----------------------------------------------------------------------------
+/*!     \brief      Removes any comments from parse_buf
+ *      \details    Takes in parse_buf, tokenizes based on comment flag "#",
+ *                  and removes everything after the first "#".
+ */
+int removeComments(char* parse_buf)
+{
+    char* token;
+    char* comment_location;
+    
+    //See where comment is
+    comment_location = strchr(parse_buf, '#');
+    
+    //If pointer isn't NULL, we found one
+    if (comment_location != NULL)
+    {
+        //Edit parse_buf to replace tab with space
+        parse_buf[comment_location-parse_buf] = '\0';
+        
+    }
+    
+    //If the line without a comment is empty, return a 1 code
+    return lineIsEmpty(parse_buf);
+}
+
+//-----------------------------------------------------------------------------
+/*!     \brief      Categorizes and removes labels from parse_buf
+ *      \details    Takes in parse_buf, tokenizes based on ":",
+ *                  then stores everything after ":" in parse_buf.
+ */
+int parseForLabels(char* parse_buf)
+{
+    char tokenizer[255], label[255];
+    char* token;
+    
+    //Check for empty line
+    if ( lineIsEmpty(parse_buf) )
+    {
+        return -1;
+    }
+    
+    //Initialize tokenizer
+    strcpy(tokenizer, parse_buf);
+    
+    //Tokenize, split on ":" (for labels)
+    token = strtok(tokenizer, ":");
+    
+    // If we found a ":"
+    if (strcmp(token, parse_buf) != 0)
+    {
+        //Check for empty string
+        if ( lineIsEmpty(token) )
+        {
+            return -1;
+        }
+        
+        //Add label
+        addLabel(token, instructionNumber);
+        
+        // Store everything after label in parse_buf
+        token = strtok(NULL, "\n");
+        
+        //Check for empty line
+        if ( lineIsEmpty(token) )
+        {
+            return -1;
+        }
+        
+        //Copy line w/ label removed back to parse_buf
+        strcpy(parse_buf, token);
+        
+    }
+    
+    //Return 0 since parse_buf isn't empty
+    return 0;
+}
+
+//-----------------------------------------------------------------------------
+/*!     \brief      Translates opcode from string to hex
+ *      \details    Takes an opcode as a string and translates to hex. Returns
+ *                  an error if the opcode was not recognized
+ */
+ushort translateOpcode(char *opcode)
+{
+    if (0 == strcmp(opcode, "lw"))
+        return LW;
+    else if (0 == strcmp(opcode, "sw"))
+        return SW;
+    else if (0 == strcmp(opcode, "add"))
+	        return ADD;
+	else if (0 == strcmp(opcode, "addi"))
+        return ADDI;
+    else if (0 == strcmp(opcode, "inv"))
+        return INV;
+    else if (0 == strcmp(opcode, "and"))
+        return AND;
+    else if (0 == strcmp(opcode, "andi"))
+        return ANDI;
+    else if (0 == strcmp(opcode, "or"))
+        return OR;
+    else if (0 == strcmp(opcode, "ori"))
+        return ORI;
+    else if (0 == strcmp(opcode, "sra"))
+        return SRA;
+    else if (0 == strcmp(opcode, "sll"))
+        return SLL;
+    else if (0 == strcmp(opcode, "beq"))
+        return BEQ;
+    else if (0 == strcmp(opcode, "bne"))
+        return BNE;
+    else if (0 == strcmp(opcode, "clr"))
+        return CLR;
+    else
+    {
+        addError(INV_OPCODE);
+
+        return 0xF;
+    }
+}
+
+
+//-----------------------------------------------------------------------------
+/*!     \brief      Gets opcode from parse_buf and translates to numerical opcode
+ *                  Basically a wrapper for translateOpcode( )
+ */
+int getOpcode(char* parse_buf, INSTR* instr_ptr)
+{
+    char tokenizer[255];
+    char* token;
+    
+    //Initialize tokenizer
+    strcpy(tokenizer, parse_buf);
+
+    //Parse for opcode
+    token = strtok(tokenizer, " ");
+    
+    //Check for empty string
+    if ( lineIsEmpty(token) )
+    {
+        return -1;
+    }
+    
+    instr_ptr->opcode = translateOpcode(token);
+    
+    //Pull everything after opcode into parse_buf
+    token = strtok(NULL, "\n");
+    
+    //Check for empty string
+    if ( lineIsEmpty(token) )
+    {
+        return -1;
+    }
+    
+    strcpy(parse_buf, token);
+    
+    //Return numerical opcode
+    return 0;
+
+}
+
+
+//-----------------------------------------------------------------------------
+/*!     \brief      Parses string, returns immediate value
+ *      \details    Takes a string assumed to contain an immediate value;
+ *                  if the string contains "0x", the value is interpretted as
+ *                  hex, otherwise, it is interpretted as decimal.
+ */
+int getImmed(char* immediate_string)
+{
+    char* zero_indicator;
+    char* x_indicator;
+    //char* token;
+    int immedNum;
+    
+    //Look for zero in token
+    zero_indicator = strchr(immediate_string, '0');
+    
+    //Look for x in token
+    x_indicator = strchr(immediate_string, 'x');
+    
+    //Case where "0x" is present
+    if (x_indicator == (zero_indicator + 1))
+    {
+        immediate_string = x_indicator + 1;
+        sscanf(immediate_string, "%x", &immedNum);
+    }
+    
+    //Case where "0x" is not present
+    else if (x_indicator == NULL)
+    {
+        sscanf(immediate_string, "%d", &immedNum);
+    }
+    
+    //Case indicates error
+    else
+    {
+        //Need some kind of error handle here
+        return 0;
+    }
+    
+    return immedNum;
+}
+//-----------------------------------------------------------------------------
 /*!     \brief      Function to populate an instr bitfield based on a string
  *      \details    Based on the internal value of strtok, function parses
- *                  the assembly instruction for registers, immediates, and 
+ *                  the assembly instruction for registers, immediates, and
  *                  labels. The first register is found the same for all
  *                  instruction types; after that, different subsets of
  *                  instructions are treated differently.
@@ -360,7 +687,7 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
     int result = 0;
     int immedNum;
     int scanError = 0;
-
+    
     char immedStr[255];
     strcpy(immedStr, "");
     
@@ -394,7 +721,7 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         
         //Parse second register
         sscanf(token, "$%i,", &rSecond);
-
+        
         // Grab third register
         token = strtok(NULL, " ");
         
@@ -405,9 +732,9 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         }
         //Parse third register
         sscanf(token, "$%i", &rThird);
-
+        
         R_INSTR *r_instr = (R_INSTR*)instr;
-
+        
         //Populate instructions according to format
         // opcode   $rd, $rs, $rt
         r_instr->rs = rSecond;
@@ -457,14 +784,14 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
             addError(PARSE_ERR);
         }
     }
-
+    
     //Next treat weird R-type (inv/clr)
     // Format:
     // opcode $rt
     else if (instr->opcode == CLR)
     {
         R_INSTR *r_instr = (R_INSTR*)instr;
-
+        
         //Populate instructions according to format
         // opcode   $rt
         // (duplicate $rt into $rd)
@@ -477,10 +804,10 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
             scanError == -1   )
         {
             addError(PARSE_ERR);
-
+            
         }
     }
-
+    
     // Next treat weird IJ-type (load/store)
     // Format:
     // opcode $rt, offs($rs)
@@ -501,7 +828,7 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         
         //Parse immediate
         //sscanf(token, "%x", &immedNum);
-
+        
         //Grab second register
         token = strtok(NULL, ")");
         
@@ -513,7 +840,7 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         
         //Parse second register
         sscanf(token, "$%i", &rSecond);
-
+        
         //Populate instructions according to format
         // opcode   $rt, offst($rs)
         IJ_INSTR *ij_instr = (IJ_INSTR*)instr;
@@ -527,10 +854,10 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
             scanError == -1   )
         {
             addError(PARSE_ERR);
-
+            
         }
     }
-
+    
     // Now treat IJ instructions with a LABEL
     // Format:
     // opcode $rd, $rs, LABEL
@@ -548,7 +875,7 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         
         //Parse second register
         sscanf(token, "$%i,", &rSecond);
-
+        
         //Grab label
         token = strtok(NULL, " \n");
         
@@ -560,7 +887,7 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         
         //Parse label
         sscanf(token, "%s", immedStr);
-
+        
         //Populate instructions according to format
         // opcode $rs, $rt, label
         IJ_INSTR *ij_instr = (IJ_INSTR*)instr;
@@ -576,11 +903,11 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
             scanError            == -1   )
         {
             addError(PARSE_ERR);
-
+            
         }
-
+        
     }
-
+    
     // Now treat all other IJ type instructions
     // Format:
     // opcode $rd, $rs, IMM
@@ -601,7 +928,7 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         
         //Parse second register
         sscanf(token, "$%i,", &rSecond);
-
+        
         //Grab immediate
         token = strtok(NULL, " \n");
         
@@ -615,7 +942,7 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         
         //Parse immediate
         //sscanf(token, "%x", &immedNum);
-
+        
         // Populate instructions according to format
         // opcode $rd, $rs, IMM
         IJ_INSTR *ij_instr = (IJ_INSTR*)instr;
@@ -629,309 +956,11 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
             scanError == -1  )
         {
             addError(PARSE_ERR);
-
+            
         }
     }
-
+    
     return 0;
-}
-
-//-----------------------------------------------------------------------------
-/*!     \brief      Parses string, returns immediate value
- *      \details    Takes a string assumed to contain an immediate value;
- *                  if the string contains "0x", the value is interpretted as
- *                  hex, otherwise, it is interpretted as decimal.
- */
-int getImmed(char* immediate_string)
-{
-    char* zero_indicator;
-    char* x_indicator;
-    //char* token;
-    int immedNum;
-    
-    //Look for zero in token
-    zero_indicator = strchr(immediate_string, '0');
-    
-    //Look for x in token
-    x_indicator = strchr(immediate_string, 'x');
-    
-    //Case where "0x" is present
-    if (x_indicator == (zero_indicator + 1))
-    {
-        immediate_string = x_indicator + 1;
-        sscanf(immediate_string, "%x", &immedNum);
-    }
-    
-    //Case where "0x" is not present
-    else if (x_indicator == NULL)
-    {
-        sscanf(immediate_string, "%d", &immedNum);
-    }
-    
-    //Case indicates error
-    else
-    {
-        //Need some kind of error handle here
-        return 0;
-    }
-    
-    return immedNum;
-}
-
-//-----------------------------------------------------------------------------
-/*!     \brief      Function to add a machine code instruction to LL
- *      \details    Takes a generic type machine code instruction and appends
- *                  it to a linked list of instructions
- */
-INSTR_NODE* addInstruction(INSTR *new, INSTR_NODE **current)
-{
-    //Create new instruction node
-    INSTR_NODE *newItem = (INSTR_NODE*)malloc(sizeof(INSTR_NODE));
-    newItem->next = NULL;
-    
-    //Populate with instruction
-    newItem->instr = *new;
-    
-    //If this is the first instruction
-    if (instr_LL_head == NULL)
-    {
-        instr_LL_head = newItem;
-        *current = instr_LL_head;
-    }
-    //If this is not the first instruction
-    else if (*current != NULL)
-    {
-        (*current)->next = newItem;
-        *current = newItem;
-    }
-
-    return *current;
-}
-
-//-----------------------------------------------------------------------------
-/*!     \brief      Wrapper for adding R-type instruction to LL
- *      \details    Takes an instruction in terms of R-type specific parameters,
- *                  populates them into an R-type machine code instruction bitfield,
- *                  then casts as a generic machine code instruction and calls
- *                  addInstruction()
- */
-INSTR_NODE* addRInstr(ushort opcode, ushort rs, ushort rt, ushort rd, INSTR_NODE **current)
-{
-    R_INSTR *instr = (R_INSTR*)malloc(sizeof(R_INSTR));
-    instr->opcode = opcode;
-    instr->rs = rs;
-    instr->rt = rt;
-    instr->rd = rd;
-    instr->pad = 0;
-
-    return addInstruction((INSTR*)instr, current);
-}
-
-//-----------------------------------------------------------------------------
-/*!     \brief      Wrapper for adding IJ-type instruction to LL
- *      \details    Takes an instruction in terms of IJ-type specific parameters,
- *                  populates them into an IJ-type machine code instruction bitfield,
- *                  and casts as a generic machine code instruction and calls
- *                  addInstruction(). Also adds a label_reference to the created
- *                  list item (for branch/jump commands)
- */
-INSTR_NODE* addIJInstr(ushort opcode, ushort rs, ushort rd, ushort immed, char* label_reference, INSTR_NODE **current)
-{
-    IJ_INSTR *instr = (IJ_INSTR*)malloc(sizeof(IJ_INSTR));
-    instr->opcode = opcode;
-    instr->rs = rs;
-    instr->rd = rd;
-    instr->immed = immed;
-
-    if ( (*current = addInstruction((INSTR*)instr, current)) )
-    {
-        (*current)->label_reference = (char*)malloc(255);
-        strcpy((*current)->label_reference, label_reference);
-    }
-
-    return *current;
-}
-
-//-----------------------------------------------------------------------------
-/*!     \brief      Translates opcode from string to hex
- *      \details    Takes an opcode as a string and translates to hex. Returns
- *                  an error if the opcode was not recognized
- */
-ushort translateOpcode(char *opcode)
-{
-    if (0 == strcmp(opcode, "lw"))
-        return LW;
-    else if (0 == strcmp(opcode, "sw"))
-        return SW;
-    else if (0 == strcmp(opcode, "add"))
-	        return ADD;
-	else if (0 == strcmp(opcode, "addi"))
-        return ADDI;
-    else if (0 == strcmp(opcode, "inv"))
-        return INV;
-    else if (0 == strcmp(opcode, "and"))
-        return AND;
-    else if (0 == strcmp(opcode, "andi"))
-        return ANDI;
-    else if (0 == strcmp(opcode, "or"))
-        return OR;
-    else if (0 == strcmp(opcode, "ori"))
-        return ORI;
-    else if (0 == strcmp(opcode, "sra"))
-        return SRA;
-    else if (0 == strcmp(opcode, "sll"))
-        return SLL;
-    else if (0 == strcmp(opcode, "beq"))
-        return BEQ;
-    else if (0 == strcmp(opcode, "bne"))
-        return BNE;
-    else if (0 == strcmp(opcode, "clr"))
-        return CLR;
-    else
-    {
-        addError(INV_OPCODE);
-
-        return 0xF;
-    }
-}
-//-----------------------------------------------------------------------------
-/*!     \brief      Replaces any tabs in parse_buf with spaces
- *      \details    Takes in parse_buf, searches for tab characters, and 
- *                  replaces those found with spaces.
- */
-int replaceTabsWithSpaces(char* parse_buf)
-{
-    char* tab_location;
-    
-    //Get pointer to first occurence of '\t' in parse_buf
-    tab_location = strchr(parse_buf, '\t');
-    
-    //If pointer isn't NULL, we found one
-    while (tab_location != NULL)
-    {
-        //Edit parse_buf to replace tab with space
-        parse_buf[tab_location-parse_buf] = ' ';
-        
-        //This syntax advnaces strchr() to find next tab
-        tab_location = strchr(tab_location + 1, '\t');
-    }
-    
-    return lineIsEmpty(parse_buf);
-}
-
-//-----------------------------------------------------------------------------
-/*!     \brief      Removes any comments from parse_buf
- *      \details    Takes in parse_buf, tokenizes based on comment flag "#",
- *                  and removes everything after the first "#".
- */
-int removeComments(char* parse_buf)
-{
-    char* token;
-    char* comment_location;
-    
-    //See where comment is
-    comment_location = strchr(parse_buf, '#');
-    
-    //If pointer isn't NULL, we found one
-    if (comment_location != NULL)
-    {
-        //Edit parse_buf to replace tab with space
-        parse_buf[comment_location-parse_buf] = '\0';
-
-    }
-    
-    //If the line without a comment is empty, return a 1 code
-    return lineIsEmpty(parse_buf);
-}
-
-//-----------------------------------------------------------------------------
-/*!     \brief      Categorizes and removes labels from parse_buf
- *      \details    Takes in parse_buf, tokenizes based on ":",
- *                  then stores everything after ":" in parse_buf.
- */
-int parseForLabels(char* parse_buf)
-{
-    char tokenizer[255], label[255];
-    char* token;
-    
-    //Check for empty line
-    if ( lineIsEmpty(parse_buf) )
-    {
-        return -1;
-    }
-    
-    //Initialize tokenizer
-    strcpy(tokenizer, parse_buf);
-    
-    //Tokenize, split on ":" (for labels)
-    token = strtok(tokenizer, ":");
-    
-    // If we found a ":"
-    if (strcmp(token, parse_buf) != 0)
-    {
-        //Check for empty string
-        if ( lineIsEmpty(token) )
-        {
-            return -1;
-        }
-
-        //Add label
-        addLabel(token, instructionNumber);
-        
-        // Store everything after label in parse_buf
-        token = strtok(NULL, "\n");
-        
-        //Check for empty line
-        if ( lineIsEmpty(token) )
-        {
-            return -1;
-        }
-        
-        //Copy line w/ label removed back to parse_buf
-        strcpy(parse_buf, token);
-        
-    }
-    
-    //Return 0 since parse_buf isn't empty
-    return 0;
-}
-
-//-----------------------------------------------------------------------------
-/*!     \brief      Gets opcode from parse_buf and translates to numerical opcode
- */
-int getOpcode(char* parse_buf, INSTR* instr_ptr)
-{
-    char tokenizer[255];
-    char* token;
-    
-    //Initialize tokenizer
-    strcpy(tokenizer, parse_buf);
-
-    //Parse for opcode
-    token = strtok(tokenizer, " ");
-    
-    //Check for empty string
-    if ( lineIsEmpty(token) )
-    {
-        return -1;
-    }
-    
-    instr_ptr->opcode = translateOpcode(token);
-    
-    //Pull everything after opcode into parse_buf
-    token = strtok(NULL, "\n");
-    
-    //Check for empty string
-    if ( lineIsEmpty(token) )
-    {
-        return -1;
-    }
-    
-    strcpy(parse_buf, token);
-    
-    //Return numerical opcode
-    return 0;
-
 }
 
 //-----------------------------------------------------------------------------
@@ -1018,26 +1047,6 @@ int parseOneLine(char* parse_buf, INSTR* instr_ptr, INSTR_NODE** ptr_to_current)
     
     return -1;
 }
-
-//-----------------------------------------------------------------------------
-/*!     \brief      Return -1 for empty/NULL string
- */
-int lineIsEmpty(char* parse_buf)
-{
-    if ( parse_buf == NULL              ||
-         (strcmp(parse_buf, "\n") == 0) ||
-         (strcmp(parse_buf, "\r") == 0) ||
-         (strcmp(parse_buf, "")   == 0)   )
-    {
-        return -1;
-    }
-    
-    return 0;
-}
-
-//-----------------------------------------------------------------------------
-/*!     \brief     Adds error to error LL
- */
 
 
 /*------------------------------------------------------------------------------
