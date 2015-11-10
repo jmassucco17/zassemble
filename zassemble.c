@@ -285,7 +285,6 @@ int lineIsEmpty(char* parse_buf)
     return 0;
 }
 
-
 //-----------------------------------------------------------------------------
 /*!     \brief      Function to add an error to a LL
  */
