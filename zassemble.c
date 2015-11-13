@@ -914,7 +914,9 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
     // opcode $rd, $rs, IMM
     else if (instr->opcode == ADDI ||
              instr->opcode == ANDI ||
-             instr->opcode == ORI    )
+             instr->opcode == ORI  ||
+             instr->opcode == SRA  ||
+             instr->opcode == SLL    )
     {
         //Grab second register
         token = strtok(NULL, " ");
