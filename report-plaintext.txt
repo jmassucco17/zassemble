@@ -114,17 +114,17 @@ i. Physical Instructions
     sra
     Type: I-type
     Opcode: 0x9
-    Syntax: sra $rd, $rs, SHAMT
+    Syntax: sra $rd, $rs
     Description:
-        Shifts $rs SHAMT bits to the right, extending
+        Shifts $rs 1 bit to the right, extending
         the sign, and stores the result in $rd.
         
     sll
     Type: I-type
     Opcode: 0xA
-    Syntax: sll $rd, $rs, SHAMT
+    Syntax: sll $rd, $rs
     Description:
-        Shifts $rs SHAMT bits to the left and stores
+        Shifts $rs 1 bit to the left and stores
         the result in $rd.
         
     beq
