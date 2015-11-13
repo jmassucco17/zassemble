@@ -750,12 +750,10 @@ int populateInstr(INSTR *instr, char* parse_buf, char* label_reference)
         }
     }
     
-    //Next treat weird R-type (inv, sll, sra)
+    //Next treat weird INV
     // Format:
     // opcode $rd, $rt
-    else if (instr->opcode == INV ||
-             instr->opcode == SRA ||
-             instr->opcode == SLL   )
+    else if (instr->opcode == INV)
     {
         //Grab second register
         token = strtok(NULL, " ");
